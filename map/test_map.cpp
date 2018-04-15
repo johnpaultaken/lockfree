@@ -1,7 +1,7 @@
 #include <iostream>
 using std::cout;
 
-#include <map.h>
+#include "map.h"
 
 int main(int argc, char ** argv)
 {
