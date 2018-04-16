@@ -92,7 +92,7 @@ public:
     // It cannot also return a const reference because the lifetime of
     // implementation is only guaranteed until return.
     //
-    mapped_type at(const key_type & key)
+    mapped_type at(const key_type & key) const
     {
         auto implementation = atomic_load (&implementation_);
 
