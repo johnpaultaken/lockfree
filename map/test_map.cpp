@@ -1,14 +1,14 @@
-#include <iostream>
-using std::cout;
-
 #include "map.h"
+
+using std::cout;
 
 int main(int argc, char ** argv)
 {
     lockfree::map<int,int> m;
-    m.insert(std::make_pair(2,3));
+    m.set_value(2, 3);
+    cout << m.at(2);
 
     cout << "\ndone\n";
-    //getchar();
+    getchar();
     return 0;
 }
