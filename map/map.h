@@ -7,6 +7,7 @@
 #pragma once
 
 #include <map>
+#include <unordered_map>
 #include <memory>
 #include <atomic>
 #include <iostream>
@@ -17,27 +18,17 @@ namespace lockfree
 using std::shared_ptr;
 
 template <
-    typename Key,
-    typename Mapped,
-    template <
-        typename K,
-        typename M,
-        typename P,
-        typename A
-    >
-    typename Implementation = std::map,
-    typename Predicate = std::less <Key>,
-    typename Allocator = std::allocator <std::pair <const Key, Mapped>>
+    typename Implementation
 >
-class map
+class map_template
 {
 public:
-    using implementation_type = Implementation<Key, Mapped, Predicate, Allocator>;
+    using implementation_type = Implementation;
     using key_type = typename implementation_type::key_type;
     using mapped_type = typename implementation_type::mapped_type;
     using value_type = typename implementation_type::value_type;
 
-    map ()
+    map_template()
     {
         if (! atomic_is_lock_free (& implementation_))
         {
@@ -46,6 +37,22 @@ public:
         }
 
         auto implementation = std::make_shared <implementation_type> ();
+
+        atomic_store (& implementation_, implementation);
+    }
+
+    map_template (implementation_type && imp)
+    {
+        if (! atomic_is_lock_free (& implementation_))
+        {
+            std::cerr << "\nlockfree::map not supported by this platform."
+                << " Falling back to lock based implementation.";
+        }
+
+        //
+        // This call will invoke the move constructor.
+        //
+        auto implementation = std::make_shared <implementation_type> (imp);
 
         atomic_store (& implementation_, implementation);
     }
@@ -92,7 +99,7 @@ public:
     // It cannot also return a const reference because the lifetime of
     // implementation is only guaranteed until return.
     //
-    mapped_type at(const key_type & key) const
+    mapped_type at (const key_type & key) const
     {
         auto implementation = atomic_load (&implementation_);
 
@@ -101,5 +108,23 @@ public:
 private:
     shared_ptr <implementation_type> implementation_;
 };
+
+template <
+    typename Key,
+    typename Mapped,
+    typename Predicate = std::less <Key>,
+    typename Allocator = std::allocator <std::pair <const Key, Mapped>>
+>
+using map = map_template <std::map <Key, Mapped, Predicate, Allocator>>;
+
+
+template <
+    typename Key,
+    typename Mapped,
+    typename Hash = std::hash<Key>,
+    typename Predicate = std::equal_to <Key>,
+    typename Allocator = std::allocator <std::pair <const Key, Mapped>>
+>
+using unordered_map = map_template <std::unordered_map <Key, Mapped, Hash, Predicate, Allocator>>;
 
 }
