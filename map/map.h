@@ -52,7 +52,9 @@ public:
         //
         // This call will invoke the move constructor.
         //
-        auto implementation = std::make_shared <implementation_type> (imp);
+        auto implementation = std::make_shared <implementation_type> (
+            std::forward <implementation_type> (imp)
+        );
 
         atomic_store (& implementation_, implementation);
     }
