@@ -2,6 +2,9 @@
 // year   : 2018
 // author : John Paul
 // email  : johnpaultaken@gmail.com
+// source : https://github.com/johnpaultaken
+// description :
+//      Lock-free wait-free implementation of map and unordered_map in C++11.
 //----------------------------------------------------------------------------
 
 #pragma once
@@ -11,6 +14,15 @@
 #include <memory>
 #include <atomic>
 #include <iostream>
+
+/*
+Notes:
+1. No members are provided that return iterators or references to elements cuz
+    such functionality will require a shared_ptr reference to Implementation be
+    bound to the life time of the returned item as well.
+2. Do not use -pthread compiler option in gcc because
+    using that option seems to trigger lock based implementation.
+*/
 
 namespace lockfree
 {
@@ -24,16 +36,18 @@ class map_template
 {
 public:
     using implementation_type = Implementation;
+    using this_type = map_template <implementation_type>;
     using key_type = typename implementation_type::key_type;
     using mapped_type = typename implementation_type::mapped_type;
     using value_type = typename implementation_type::value_type;
+    using size_type = typename implementation_type::size_type;
 
-    map_template()
+    map_template ()
     {
         if (! atomic_is_lock_free (& implementation_))
         {
             std::cerr << "\nlockfree::map not supported by this platform."
-                            << " Falling back to lock based implementation.";
+                      << " Falling back to lock based implementation.";
         }
 
         auto implementation = std::make_shared <implementation_type> ();
@@ -41,17 +55,32 @@ public:
         atomic_store (& implementation_, implementation);
     }
 
+    //
+    // No copy constructor.
+    //
+    map_template (const this_type &) = delete;
+
+    //
+    // No move constructor.
+    //
+    map_template (this_type &&) = delete;
+
+    //
+    // Move constructor from implementation type.
+    // If lockfree::map will be initialized by single-threaded code,
+    // it is recommended to use this constructor for efficiency.
+    // Using set_value for initialization is required only for
+    // multi-threaded initialization.
+    //
     map_template (implementation_type && imp)
     {
         if (! atomic_is_lock_free (& implementation_))
         {
             std::cerr << "\nlockfree::map not supported by this platform."
-                << " Falling back to lock based implementation.";
+                      << " Falling back to lock based implementation.";
         }
 
-        //
         // This call will invoke the move constructor.
-        //
         auto implementation = std::make_shared <implementation_type> (
             std::forward <implementation_type> (imp)
         );
@@ -60,9 +89,84 @@ public:
     }
 
     //
+    // No copy assignment.
+    //
+    this_type & operator = (const this_type &) = delete;
+
+    //
+    // No move assignment.
+    //
+    this_type & operator = (this_type &&) = delete;
+
+    //
+    // map a key to a given value.
+    // If key already exists in map, its value is updated if need be.
+    //
+    void set_value (const key_type & key, const mapped_type & val)
+    {
+        // has_value check is for efficiency only.
+        // So it doesn't have to be atomic with setting value.
+        if (! has_value(key, val))
+        {
+            auto expected = atomic_load (& implementation_);
+            shared_ptr <implementation_type> desired;
+            do
+            {
+                // clone implementation_type by copy construction.
+                desired = std::make_shared <implementation_type> (* expected);
+
+                (* desired) [key] = val;
+            } while (
+                atomic_compare_exchange_weak (
+                    & implementation_, & expected, desired
+                )
+            );
+        }
+    }
+
+    //
+    // Similar to std::map empty().
+    //
+    bool empty () const noexcept
+    {
+        auto implementation = atomic_load (& implementation_);
+
+        return implementation->empty ();
+    }
+
+    //
+    // Similar to std::map size().
+    //
+    size_type size () const noexcept
+    {
+        auto implementation = atomic_load (& implementation_);
+
+        return implementation->size ();
+    }
+
+    //
+    // check whether a key is present in the map.
+    //
+    bool has_key (const key_type & key) const noexcept
+    {
+        auto implementation = atomic_load (& implementation_);
+
+        auto itr = implementation->find (key);
+        if (itr != implementation->end ())
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    //
     // check whether a key is mapped to a given value in the map.
     //
-    bool has_value (const key_type & key, const mapped_type & val) const noexcept
+    bool has_value (
+        const key_type & key,
+        const mapped_type & val
+    ) const noexcept
     {
         auto implementation = atomic_load (& implementation_);
 
@@ -76,12 +180,28 @@ public:
     }
 
     //
-    // map a key to a given value.
-    // If key already exists in map, its value is updated if need be.
+    // Similar to std::map at(key).
+    // Difference: Unlike std::map this function cannot return a reference
+    // because the lifetime of the implementation is only guaranteed until
+    // return of this function.
     //
-    void set_value (const key_type & key, const mapped_type & val)
+    mapped_type at (const key_type & key) const
     {
-        if (! has_value(key, val))
+        auto implementation = atomic_load (&implementation_);
+
+        return implementation->at (key);
+    }
+
+    //
+    // Similar to std::map erase(key).
+    //
+    size_type erase (const key_type & key)
+    {
+        size_type count = 0;
+
+        // has_key check is for efficiency only.
+        // So it doesn't have to be atomic with erase itself.
+        if (has_key (key))
         {
             auto expected = atomic_load (& implementation_);
             shared_ptr <implementation_type> desired;
@@ -90,23 +210,43 @@ public:
                 // clone implementation_type by copy construction.
                 desired = std::make_shared <implementation_type> (* expected);
 
-                (* desired) [key] = val;
-            } while (atomic_compare_exchange_weak (& implementation_, & expected, desired));
+                count = desired->erase (key);
+            } while (
+                atomic_compare_exchange_weak (
+                    & implementation_, & expected, desired
+                )
+            );
+        }
+
+        return count;
+    }
+
+    //
+    // Similar to std::map clear().
+    // Difference: can throw bad_alloc.
+    //
+    void clear ()
+    {
+        // empty check is for efficiency only.
+        // So it doesn't have to be atomic with clear itself.
+        if (! empty ())
+        {
+            auto expected = atomic_load (& implementation_);
+            shared_ptr <implementation_type> desired;
+            do
+            {
+                // clone implementation_type by copy construction.
+                desired = std::make_shared <implementation_type> (* expected);
+
+                desired->clear ();
+            } while (
+                atomic_compare_exchange_weak (
+                    & implementation_, & expected, desired
+                )
+            );
         }
     }
 
-    //
-    // Note: Unlike std::map this function cannot return a reference
-    // because this function is read only.
-    // It cannot also return a const reference because the lifetime of
-    // implementation is only guaranteed until return.
-    //
-    mapped_type at (const key_type & key) const
-    {
-        auto implementation = atomic_load (&implementation_);
-
-        return implementation->at (key);
-    }
 private:
     shared_ptr <implementation_type> implementation_;
 };
@@ -127,6 +267,8 @@ template <
     typename Predicate = std::equal_to <Key>,
     typename Allocator = std::allocator <std::pair <const Key, Mapped>>
 >
-using unordered_map = map_template <std::unordered_map <Key, Mapped, Hash, Predicate, Allocator>>;
+using unordered_map = map_template <
+    std::unordered_map <Key, Mapped, Hash, Predicate, Allocator>
+>;
 
 }
