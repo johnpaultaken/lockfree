@@ -74,10 +74,9 @@ public:
 
     //
     // Move constructor from implementation type.
-    // If lockfree::map will be initialized by single-threaded code,
-    // it is recommended to use this constructor for efficiency.
-    // Using set_value for initialization is required only for
-    // multi-threaded initialization.
+    // For initialization of lockfree::map it is recommended to use this
+    // constructor (or the following move assignment from implementation type)
+    // for the sake of efficiency.
     //
     map_template (implementation_type && imp)
     {
@@ -87,7 +86,7 @@ public:
                       << " Falling back to lock based implementation.";
         }
 
-        // This call will invoke the move constructor.
+        // This call will invoke the move constructor of implementation_type.
         auto implementation = std::make_shared <implementation_type> (
             std::forward <implementation_type> (imp)
         );
@@ -106,14 +105,89 @@ public:
     this_type & operator = (this_type &&) = delete;
 
     //
-    // map a key to a given value.
-    // If key already exists in map, its value is updated if need be.
+    // Move assignment from implementation type.
+    // For initialization of lockfree::map it is recommended to use this
+    // function (or the above move constructor from implementation type)
+    // for the sake of efficiency.
     //
-    void set_value (const key_type & key, const mapped_type & val)
+    void operator = (implementation_type && imp)
     {
-        // has_value check is for efficiency only.
-        // So it doesn't have to be atomic with setting value.
-        if (! has_value(key, val))
+        // This call will invoke the move constructor of implementation_type.
+        auto implementation = std::make_shared <implementation_type> (
+            std::forward <implementation_type> (imp)
+        );
+
+        atomic_store (& implementation_, implementation);
+    }
+
+    //
+    // check whether a key is present in the map.
+    //
+    bool has_key (const key_type & key) const noexcept
+    {
+        auto implementation = atomic_load (& implementation_);
+
+        auto itr = implementation->find (key);
+        if (itr != implementation->end ())
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    //
+    // check whether a value is present in the map ie
+    // check whether a key is mapped to a given mapped.
+    //
+    bool has_value (
+        const key_type & key,
+        const mapped_type & mapped
+    ) const noexcept
+    {
+        auto implementation = atomic_load (& implementation_);
+
+        auto itr = implementation->find (key);
+        if (itr != implementation->end ())
+        {
+            return itr->second == mapped ? true : false;
+        }
+
+        return false;
+    }
+
+    //
+    // Similar to std::map at(key).
+    // Difference: Unlike std::map this function does not return a const
+    // reference but instead returns by value.
+    // Cannot return mapped by reference because the lifetime of the
+    // implementation is only guaranteed until the return of this function,
+    // whereas the returned reference to mapped may be held beyond that.
+    //
+    mapped_type at (const key_type & key) const
+    {
+        auto implementation = atomic_load (&implementation_);
+
+        return implementation->at (key);
+    }
+
+    //
+    // fetch the mapped for a key.
+    // If the key does not exist in the map, it is added to the map with a
+    // value initialized mapped.
+    // This is equivalent to the following std::map statement
+    // map[key];
+    //
+    mapped_type get_mapped (const key_type & key)
+    {
+        mapped_type mapped;
+
+        // at() invocation is for efficiency only.
+        try
+        {
+            mapped = at (key);
+        }
+        catch (const std::out_of_range &)
         {
             auto expected = atomic_load (& implementation_);
             shared_ptr <implementation_type> desired;
@@ -122,13 +196,83 @@ public:
                 // clone implementation_type by copy construction.
                 desired = std::make_shared <implementation_type> (* expected);
 
-                (* desired) [key] = val;
+                mapped = (* desired) [key];
             } while (
                 atomic_compare_exchange_weak (
                     & implementation_, & expected, desired
                 )
             );
         }
+
+        return mapped;
+    }
+
+    //
+    // map a key to a given mapped.
+    // If the key already exists in the map, its mapped is updated only if it
+    // is different from the one specified.
+    // This is equivalent to the following std::map statement
+    // map[key] = mapped;
+    //
+    void set_mapped (const key_type & key, const mapped_type & mapped)
+    {
+        // has_value check is for efficiency only.
+        // It doesn't have to be atomic with setting value.
+        if (! has_value(key, mapped))
+        {
+            auto expected = atomic_load (& implementation_);
+            shared_ptr <implementation_type> desired;
+            do
+            {
+                // clone implementation_type by copy construction.
+                desired = std::make_shared <implementation_type> (* expected);
+
+                (* desired) [key] = mapped;
+            } while (
+                atomic_compare_exchange_weak (
+                    & implementation_, & expected, desired
+                )
+            );
+        }
+    }
+
+    //
+    // The following class is to support indexing operation of lockfree::map.
+    // It provides a wrapper for a non-const reference to mapped_type.
+    //
+    class reference_to_mapped
+    {
+    public:
+        operator mapped_type ()
+        {
+            return pContainer_->get_mapped (key_);
+        }
+
+        reference_to_mapped & operator = (const mapped_type & mapped)
+        {
+            pContainer_->set_mapped (key_, mapped);
+            return * this;
+        }
+    private:
+        using container_type = map_template <implementation_type>;
+
+        reference_to_mapped (
+            container_type * pContainer,
+            const key_type & key
+        ) : pContainer_(pContainer), key_(key)
+        {
+        }
+
+        friend container_type;
+
+    private:
+        container_type * pContainer_;
+        key_type key_;
+    };
+
+    reference_to_mapped operator [] (const key_type & key)
+    {
+        return reference_to_mapped {this, key};
     }
 
     //
@@ -152,54 +296,6 @@ public:
     }
 
     //
-    // check whether a key is present in the map.
-    //
-    bool has_key (const key_type & key) const noexcept
-    {
-        auto implementation = atomic_load (& implementation_);
-
-        auto itr = implementation->find (key);
-        if (itr != implementation->end ())
-        {
-            return true;
-        }
-
-        return false;
-    }
-
-    //
-    // check whether a key is mapped to a given value in the map.
-    //
-    bool has_value (
-        const key_type & key,
-        const mapped_type & val
-    ) const noexcept
-    {
-        auto implementation = atomic_load (& implementation_);
-
-        auto itr = implementation->find (key);
-        if (itr != implementation->end ())
-        {
-            return itr->second == val ? true : false;
-        }
-
-        return false;
-    }
-
-    //
-    // Similar to std::map at(key).
-    // Difference: Unlike std::map this function cannot return a reference
-    // because the lifetime of the implementation is only guaranteed until
-    // return of this function.
-    //
-    mapped_type at (const key_type & key) const
-    {
-        auto implementation = atomic_load (&implementation_);
-
-        return implementation->at (key);
-    }
-
-    //
     // Similar to std::map erase(key).
     //
     size_type erase (const key_type & key)
@@ -207,7 +303,7 @@ public:
         size_type count = 0;
 
         // has_key check is for efficiency only.
-        // So it doesn't have to be atomic with erase itself.
+        // It doesn't have to be atomic with erase itself.
         if (has_key (key))
         {
             auto expected = atomic_load (& implementation_);
@@ -235,7 +331,7 @@ public:
     void clear ()
     {
         // empty check is for efficiency only.
-        // So it doesn't have to be atomic with clear itself.
+        // It doesn't have to be atomic with clear itself.
         if (! empty ())
         {
             auto expected = atomic_load (& implementation_);

@@ -23,15 +23,33 @@ void pass(const std::string & what)
 void testcase_map()
 {
     lockfree::map<int, int> m;
-    m.set_value(0, 1);
-    m.set_value(2, 3);
-    m.set_value(4, 5);
-    assert_t(m.at(2) == 3, __FUNCTION__);
+    m[0] = 1;
+    m[2] = 3;
+    m[4] = 5;
+    assert_t(m[2] == 3, __FUNCTION__);
+
+    try {
+        auto v = m.at(100);
+        fail(__FUNCTION__);
+    }
+    catch (const std::out_of_range &)
+    {
+        pass(__FUNCTION__);
+    }
+
+    if (0 == m[101])
+    {
+        pass(__FUNCTION__);
+    }
+    else
+    {
+        fail(__FUNCTION__);
+    }
 
     lockfree::map<int, int, std::greater<int>> m2;
-    m2.set_value(0, 1);
-    m2.set_value(2, 3);
-    m2.set_value(4, 5);
+    m2[0] = 1;
+    m2[2] = 3;
+    m2[4] = 5;
     assert_t(m2.at(2) == 3, __FUNCTION__);
 }
 
@@ -47,16 +65,34 @@ struct identity
 void testcase_unordMap()
 {
     lockfree::unordered_map<int, int> m;
-    m.set_value(0, 1);
-    m.set_value(2, 3);
-    m.set_value(4, 5);
+    m[0] = 1;
+    m[2] = 3;
+    m[4] = 5;
     assert_t(m.at(2) == 3, __FUNCTION__);
 
+    try {
+        auto v = m.at(100);
+        fail(__FUNCTION__);
+    }
+    catch (const std::out_of_range &)
+    {
+        pass(__FUNCTION__);
+    }
+
+    if (0 == m[101])
+    {
+        pass(__FUNCTION__);
+    }
+    else
+    {
+        fail(__FUNCTION__);
+    }
+
     lockfree::unordered_map<int, int, identity<int>, std::equal_to<int>> m2;
-    m2.set_value(0, 1);
-    m2.set_value(2, 3);
-    m2.set_value(4, 5);
-    assert_t(m2.at(2) == 3, __FUNCTION__);
+    m2[0] = 1;
+    m2[2] = 3;
+    m2[4] = 5;
+    assert_t(m2[2] == 3, __FUNCTION__);
 }
 
 template <typename K, typename M>
