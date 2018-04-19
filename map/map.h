@@ -17,11 +17,18 @@
 
 /*
 Notes:
-1. No members are provided that return iterators or references to elements cuz
-    such functionality will require a shared_ptr reference to Implementation be
-    bound to the life time of the returned item as well.
-2. Do not use -pthread compiler option in gcc because
+1.  No members are provided that return iterator because such a functionality
+    will require modifiability of the atomic container using the returned
+    iterator.
+    However members that return const_iterator can be provided if required.
+    This can be done by holding a reference to the Implementation inside the
+    iterator to guarantee lifetime of the Implementation object.
+2.  Do not use -pthread compiler option in gcc because
     using that option seems to trigger lock based implementation.
+3.  To avoid locks in memory allocators you must use one of the per-thread
+    allocators like a not too old version of libc malloc
+    (or tcmalloc / jemalloc etc). If you have multi-threaded code, you are most
+    likely already using one.
 */
 
 namespace lockfree
