@@ -121,42 +121,6 @@ public:
     }
 
     //
-    // check whether a key is present in the map.
-    //
-    bool has_key (const key_type & key) const noexcept
-    {
-        auto implementation = atomic_load (& implementation_);
-
-        auto itr = implementation->find (key);
-        if (itr != implementation->end ())
-        {
-            return true;
-        }
-
-        return false;
-    }
-
-    //
-    // check whether a value is present in the map ie
-    // check whether a key is mapped to a given mapped.
-    //
-    bool has_value (
-        const key_type & key,
-        const mapped_type & mapped
-    ) const noexcept
-    {
-        auto implementation = atomic_load (& implementation_);
-
-        auto itr = implementation->find (key);
-        if (itr != implementation->end ())
-        {
-            return itr->second == mapped ? true : false;
-        }
-
-        return false;
-    }
-
-    //
     // Similar to std::map at(key).
     // Difference: Unlike std::map this function does not return a const
     // reference but instead returns by value.
@@ -169,71 +133,6 @@ public:
         auto implementation = atomic_load (&implementation_);
 
         return implementation->at (key);
-    }
-
-    //
-    // fetch the mapped for a key.
-    // If the key does not exist in the map, it is added to the map with a
-    // value initialized mapped.
-    // This is equivalent to the following std::map statement
-    // map[key];
-    //
-    mapped_type get_mapped (const key_type & key)
-    {
-        mapped_type mapped;
-
-        // at() invocation is for efficiency only.
-        try
-        {
-            mapped = at (key);
-        }
-        catch (const std::out_of_range &)
-        {
-            auto expected = atomic_load (& implementation_);
-            shared_ptr <implementation_type> desired;
-            do
-            {
-                // clone implementation_type by copy construction.
-                desired = std::make_shared <implementation_type> (* expected);
-
-                mapped = (* desired) [key];
-            } while (
-                atomic_compare_exchange_weak (
-                    & implementation_, & expected, desired
-                )
-            );
-        }
-
-        return mapped;
-    }
-
-    //
-    // map a key to a given mapped.
-    // If the key already exists in the map, its mapped is updated only if it
-    // is different from the one specified.
-    // This is equivalent to the following std::map statement
-    // map[key] = mapped;
-    //
-    void set_mapped (const key_type & key, const mapped_type & mapped)
-    {
-        // has_value check is for efficiency only.
-        // It doesn't have to be atomic with setting value.
-        if (! has_value(key, mapped))
-        {
-            auto expected = atomic_load (& implementation_);
-            shared_ptr <implementation_type> desired;
-            do
-            {
-                // clone implementation_type by copy construction.
-                desired = std::make_shared <implementation_type> (* expected);
-
-                (* desired) [key] = mapped;
-            } while (
-                atomic_compare_exchange_weak (
-                    & implementation_, & expected, desired
-                )
-            );
-        }
     }
 
     //
@@ -350,7 +249,120 @@ public:
         }
     }
 
+protected:
+    //
+    // Unexposed member functions.
+    // These are APIs unavailable in std::map.
+    // If clients start using these, switching between lockfree::map & std::map
+    // is no longer easy.
+    //
+
+    //
+    // check whether a key is present in the map.
+    //
+    bool has_key (const key_type & key) const noexcept
+    {
+        auto implementation = atomic_load (& implementation_);
+
+        auto itr = implementation->find (key);
+        if (itr != implementation->end ())
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    //
+    // check whether a value is present in the map ie
+    // check whether a key is mapped to a given mapped.
+    //
+    bool has_value (
+        const key_type & key,
+        const mapped_type & mapped
+    ) const noexcept
+    {
+        auto implementation = atomic_load (& implementation_);
+
+        auto itr = implementation->find (key);
+        if (itr != implementation->end ())
+        {
+            return itr->second == mapped ? true : false;
+        }
+
+        return false;
+    }
+
+    //
+    // fetch the mapped for a key.
+    // If the key does not exist in the map, it is added to the map with a
+    // value initialized mapped.
+    // This is equivalent to the following std::map statement
+    // map[key];
+    //
+    mapped_type get_mapped (const key_type & key)
+    {
+        mapped_type mapped;
+
+        // at() invocation is for efficiency only.
+        try
+        {
+            mapped = at (key);
+        }
+        catch (const std::out_of_range &)
+        {
+            auto expected = atomic_load (& implementation_);
+            shared_ptr <implementation_type> desired;
+            do
+            {
+                // clone implementation_type by copy construction.
+                desired = std::make_shared <implementation_type> (* expected);
+
+                mapped = (* desired) [key];
+            } while (
+                atomic_compare_exchange_weak (
+                    & implementation_, & expected, desired
+                )
+            );
+        }
+
+        return mapped;
+    }
+
+    //
+    // map a key to a given mapped.
+    // If the key already exists in the map, its mapped is updated only if it
+    // is different from the one specified.
+    // This is equivalent to the following std::map statement
+    // map[key] = mapped;
+    //
+    void set_mapped (const key_type & key, const mapped_type & mapped)
+    {
+        // has_value check is for efficiency only.
+        // It doesn't have to be atomic with setting value.
+        if (! has_value(key, mapped))
+        {
+            auto expected = atomic_load (& implementation_);
+            shared_ptr <implementation_type> desired;
+            do
+            {
+                // clone implementation_type by copy construction.
+                desired = std::make_shared <implementation_type> (* expected);
+
+                (* desired) [key] = mapped;
+            } while (
+                atomic_compare_exchange_weak (
+                    & implementation_, & expected, desired
+                )
+            );
+        }
+    }
+
 private:
+    //
+    // private data members.
+    //
+
     shared_ptr <implementation_type> implementation_;
 };
 
