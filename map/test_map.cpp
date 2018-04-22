@@ -51,11 +51,16 @@ void testcase_map()
     m2[2] = 3;
     m2[4] = 5;
     assert_t(m2.at(2) == 3, __FUNCTION__);
+    assert_t(m2[2] == 3, __FUNCTION__);
 
     m2.find(2);
     m2.lower_bound(2);
     m2.upper_bound(2);
     m2.equal_range(2);
+
+    m2.value_comp();
+    m2.max_size();
+    assert_t(m2.count(2) == 1, __FUNCTION__);
 }
 
 template <typename T>

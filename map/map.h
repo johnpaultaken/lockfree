@@ -47,6 +47,9 @@ public:
     using mapped_type = typename implementation_type::mapped_type;
     using value_type = typename implementation_type::value_type;
     using size_type = typename implementation_type::size_type;
+    using allocator_type = typename implementation_type::allocator_type;
+    using key_compare = typename implementation_type::key_compare;
+    using value_compare = typename implementation_type::value_compare;
 
     map_template ()
     {
@@ -172,9 +175,6 @@ public:
         return reference_to_mapped {this, key};
     }
 
-    //
-    // Similar to std::map empty().
-    //
     bool empty () const noexcept
     {
         auto implementation = atomic_load (& implementation_);
@@ -182,9 +182,6 @@ public:
         return implementation->empty ();
     }
 
-    //
-    // Similar to std::map size().
-    //
     size_type size () const noexcept
     {
         auto implementation = atomic_load (& implementation_);
@@ -192,9 +189,24 @@ public:
         return implementation->size ();
     }
 
-    //
-    // Similar to std::map erase(key).
-    //
+    template <class InputIterator>
+    void insert (InputIterator first, InputIterator last)
+    {
+        auto expected = atomic_load (& implementation_);
+        shared_ptr <implementation_type> desired;
+        do
+        {
+            // clone implementation_type by copy construction.
+            desired = std::make_shared <implementation_type> (* expected);
+
+            desired->insert (first, last);
+        } while ( !
+            atomic_compare_exchange_weak (
+                & implementation_, & expected, desired
+            )
+        );
+    }
+
     size_type erase (const key_type & key)
     {
         size_type count = 0;
@@ -211,7 +223,7 @@ public:
                 desired = std::make_shared <implementation_type> (* expected);
 
                 count = desired->erase (key);
-            } while (
+            } while ( !
                 atomic_compare_exchange_weak (
                     & implementation_, & expected, desired
                 )
@@ -239,7 +251,7 @@ public:
                 desired = std::make_shared <implementation_type> (* expected);
 
                 desired->clear ();
-            } while (
+            } while ( !
                 atomic_compare_exchange_weak (
                     & implementation_, & expected, desired
                 )
@@ -352,6 +364,41 @@ public:
         );
     }
 
+    allocator_type get_allocator () const noexcept
+    {
+        auto implementation = atomic_load (& implementation_);
+
+        return implementation->get_allocator ();
+    }
+
+    key_compare key_comp () const
+    {
+        auto implementation = atomic_load (& implementation_);
+
+        return implementation->key_comp ();
+    }
+
+    value_compare value_comp () const
+    {
+        auto implementation = atomic_load (& implementation_);
+
+        return implementation->value_comp ();
+    }
+
+    size_type count (const key_type & key) const
+    {
+        auto implementation = atomic_load (& implementation_);
+
+        return implementation->count (key);
+    }
+
+    size_type max_size () const noexcept
+    {
+        auto implementation = atomic_load (& implementation_);
+
+        return implementation->max_size ();
+    }
+
 protected:
     //
     // Unexposed member functions.
@@ -422,7 +469,7 @@ protected:
                 desired = std::make_shared <implementation_type> (* expected);
 
                 mapped = (* desired) [key];
-            } while (
+            } while ( !
                 atomic_compare_exchange_weak (
                     & implementation_, & expected, desired
                 )
@@ -453,7 +500,7 @@ protected:
                 desired = std::make_shared <implementation_type> (* expected);
 
                 (* desired) [key] = mapped;
-            } while (
+            } while ( !
                 atomic_compare_exchange_weak (
                     & implementation_, & expected, desired
                 )
