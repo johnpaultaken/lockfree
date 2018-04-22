@@ -17,16 +17,19 @@
 
 /*
 Notes:
-1.  No members are provided that return iterator because such a functionality
+1.  Usage of this map is recommended only if the number of expected reads are
+    much larger than the number of expected writes, during its steady state of
+    operation, ie after initialization.
+2.  No members are provided that return iterator because such a functionality
     will require modifiability of the atomic container using the returned
     iterator.
-    However members that return const_iterator is provided.
-2.  Do not use -pthread compiler option in gcc because
-    using that option seems to trigger lock based implementation.
+    However members that return const_iterator are provided.
 3.  To avoid locks in memory allocators you must use one of the per-thread
     allocators like a not too old version of libc malloc
     (or tcmalloc / jemalloc etc). If you have multi-threaded code, you are most
     likely already using one.
+4.  Do not use -pthread compiler option in gcc because
+    using that option seems to trigger lock based implementation.
 */
 
 namespace lockfree
@@ -239,24 +242,9 @@ public:
     //
     void clear ()
     {
-        // empty check is for efficiency only.
-        // It doesn't have to be atomic with clear itself.
-        if (! empty ())
-        {
-            auto expected = atomic_load (& implementation_);
-            shared_ptr <implementation_type> desired;
-            do
-            {
-                // clone implementation_type by copy construction.
-                desired = std::make_shared <implementation_type> (* expected);
+        auto implementation = std::make_shared <implementation_type> ();
 
-                desired->clear ();
-            } while ( !
-                atomic_compare_exchange_weak (
-                    & implementation_, & expected, desired
-                )
-            );
-        }
+        atomic_store (& implementation_, implementation);
     }
 
     //
