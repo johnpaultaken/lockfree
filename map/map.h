@@ -20,9 +20,7 @@ Notes:
 1.  No members are provided that return iterator because such a functionality
     will require modifiability of the atomic container using the returned
     iterator.
-    However members that return const_iterator can be provided if required.
-    This can be done by holding a reference to the Implementation inside the
-    iterator to guarantee lifetime of the Implementation object.
+    However members that return const_iterator is provided.
 2.  Do not use -pthread compiler option in gcc because
     using that option seems to trigger lock based implementation.
 3.  To avoid locks in memory allocators you must use one of the per-thread
@@ -44,6 +42,7 @@ class map_template
 public:
     using implementation_type = Implementation;
     using this_type = map_template <implementation_type>;
+    using container_type = this_type;
     using key_type = typename implementation_type::key_type;
     using mapped_type = typename implementation_type::mapped_type;
     using value_type = typename implementation_type::value_type;
@@ -152,9 +151,8 @@ public:
             pContainer_->set_mapped (key_, mapped);
             return * this;
         }
-    private:
-        using container_type = map_template <implementation_type>;
 
+    private:
         reference_to_mapped (
             container_type * pContainer,
             const key_type & key
@@ -247,6 +245,111 @@ public:
                 )
             );
         }
+    }
+
+    //
+    // const_iterator holds a reference to the Implementation inside the
+    // iterator to guarantee lifetime of the Implementation object.
+    //
+    class const_iterator : public implementation_type::const_iterator
+    {
+    private:
+        const_iterator (
+            typename implementation_type::const_iterator && base,
+            const shared_ptr <const implementation_type> & implementation
+        ) :
+            implementation_type::const_iterator {std::move (base)},
+            implementation_ {implementation}
+        {
+        }
+
+        shared_ptr <const implementation_type> implementation_;
+
+        friend container_type;
+    };
+
+    const_iterator begin () const noexcept
+    {
+        auto implementation = atomic_load (& implementation_);
+
+        return const_iterator {implementation->cbegin (), implementation};
+    }
+
+    const_iterator end () const noexcept
+    {
+        auto implementation = atomic_load (& implementation_);
+
+        return const_iterator {implementation->cend (), implementation};
+    }
+
+    const_iterator cbegin () const noexcept
+    {
+        auto implementation = atomic_load (& implementation_);
+
+        return const_iterator {implementation->cbegin (), implementation};
+    }
+
+    const_iterator cend () const noexcept
+    {
+        auto implementation = atomic_load (& implementation_);
+
+        return const_iterator {implementation->cend (), implementation};
+    }
+
+    const_iterator find (const key_type & key) const
+    {
+        // note: specify type as const explicitly here to make sure
+        // the const version of find() gets called next.
+        shared_ptr <const implementation_type> implementation = (
+            atomic_load (& implementation_)
+        );
+
+        return const_iterator {implementation->find (key), implementation};
+    }
+
+    const_iterator lower_bound (const key_type & key) const
+    {
+        // note: specify type as const explicitly here to make sure
+        // the const version of lower_bound() gets called next.
+        shared_ptr <const implementation_type> implementation = (
+            atomic_load (& implementation_)
+        );
+
+        return const_iterator {
+            implementation->lower_bound (key),
+            implementation
+        };
+    }
+
+    const_iterator upper_bound (const key_type & key) const
+    {
+        // note: specify type as const explicitly here to make sure
+        // the const version of upper_bound() gets called next.
+        shared_ptr <const implementation_type> implementation = (
+            atomic_load (& implementation_)
+        );
+
+        return const_iterator {
+            implementation->upper_bound (key),
+            implementation
+        };
+    }
+
+    std::pair<const_iterator,const_iterator>
+    equal_range (const key_type & key) const
+    {
+        // note: specify type as const explicitly here to make sure
+        // the const version of equal_range() gets called next.
+        shared_ptr <const implementation_type> implementation = (
+            atomic_load (& implementation_)
+        );
+
+        auto itr_pair = implementation->equal_range (key);
+
+        return std::make_pair (
+            const_iterator {std::move (itr_pair.first), implementation},
+            const_iterator {std::move (itr_pair.second), implementation}
+        );
     }
 
 protected:
