@@ -68,14 +68,33 @@ public:
     }
 
     //
-    // No copy constructor.
+    // Copy constructor.
     //
-    map_template (const this_type &) = delete;
+    map_template (const this_type & other)
+    {
+        auto other_implementation = atomic_load (& (other.implementation_));
+
+        // copy construct implementation
+        auto implementation = (
+            std::make_shared <implementation_type> (* other_implementation)
+        );
+
+        atomic_store (& implementation_, implementation);
+    }
 
     //
-    // No move constructor.
+    // Move constructor.
     //
-    map_template (this_type &&) = delete;
+    map_template (this_type &&)
+    {
+        shared_ptr <implementation_type> null_shared_ptr;
+
+        auto other_implementation = (
+            atomic_exchange (& (other.implementation_), null_shared_ptr)
+        );
+
+        atomic_store (& implementation_, other_implementation);
+    }
 
     //
     // Move constructor from implementation type.
@@ -100,14 +119,43 @@ public:
     }
 
     //
-    // No copy assignment.
+    // Copy assignment.
     //
-    this_type & operator = (const this_type &) = delete;
+    this_type & operator = (const this_type & other)
+    {
+        if (this != & other)
+        {
+            auto other_implementation = atomic_load (& (other.implementation_));
+
+            // clone other_implementation by copy construction.
+            auto implementation = (
+                std::make_shared <implementation_type> (* other_implementation)
+            );
+
+            atomic_store (& implementation_, implementation);
+        }
+
+        return * this;
+    }
 
     //
-    // No move assignment.
+    // Move assignment.
     //
-    this_type & operator = (this_type &&) = delete;
+    this_type & operator = (this_type &&)
+    {
+        if (this != & other)
+        {
+            shared_ptr <implementation_type> null_shared_ptr;
+
+            auto other_implementation = (
+                atomic_exchange (& (other.implementation_), null_shared_ptr)
+            );
+
+            atomic_store (& implementation_, other_implementation);
+        }
+
+        return * this;
+    }
 
     //
     // Move assignment from implementation type.
@@ -124,6 +172,11 @@ public:
 
         atomic_store (& implementation_, implementation);
     }
+
+    //
+    // Cannot swap two atomics atomically.
+    //
+    void swap (this_type & other) = delete;
 
     //
     // Similar to std::map at(key).
