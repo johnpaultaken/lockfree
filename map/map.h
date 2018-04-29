@@ -51,8 +51,6 @@ public:
     using value_type = typename implementation_type::value_type;
     using size_type = typename implementation_type::size_type;
     using allocator_type = typename implementation_type::allocator_type;
-    using key_compare = typename implementation_type::key_compare;
-    using value_compare = typename implementation_type::value_compare;
 
     map_template ()
     {
@@ -85,12 +83,12 @@ public:
     //
     // Move constructor.
     //
-    map_template (this_type &&)
+    map_template (this_type && other)
     {
-        shared_ptr <implementation_type> null_shared_ptr;
+        auto implementation = std::make_shared <implementation_type> ();
 
         auto other_implementation = (
-            atomic_exchange (& (other.implementation_), null_shared_ptr)
+            atomic_exchange (& (other.implementation_), implementation)
         );
 
         atomic_store (& implementation_, other_implementation);
@@ -141,14 +139,14 @@ public:
     //
     // Move assignment.
     //
-    this_type & operator = (this_type &&)
+    this_type & operator = (this_type && other)
     {
         if (this != & other)
         {
-            shared_ptr <implementation_type> null_shared_ptr;
+            auto implementation = std::make_shared <implementation_type> ();
 
             auto other_implementation = (
-                atomic_exchange (& (other.implementation_), null_shared_ptr)
+                atomic_exchange (& (other.implementation_), implementation)
             );
 
             atomic_store (& implementation_, other_implementation);
@@ -360,34 +358,6 @@ public:
         return const_iterator {implementation->find (key), implementation};
     }
 
-    const_iterator lower_bound (const key_type & key) const
-    {
-        // note: specify type as const explicitly here to make sure
-        // the const version of lower_bound() gets called next.
-        shared_ptr <const implementation_type> implementation = (
-            atomic_load (& implementation_)
-        );
-
-        return const_iterator {
-            implementation->lower_bound (key),
-            implementation
-        };
-    }
-
-    const_iterator upper_bound (const key_type & key) const
-    {
-        // note: specify type as const explicitly here to make sure
-        // the const version of upper_bound() gets called next.
-        shared_ptr <const implementation_type> implementation = (
-            atomic_load (& implementation_)
-        );
-
-        return const_iterator {
-            implementation->upper_bound (key),
-            implementation
-        };
-    }
-
     std::pair<const_iterator,const_iterator>
     equal_range (const key_type & key) const
     {
@@ -410,20 +380,6 @@ public:
         auto implementation = atomic_load (& implementation_);
 
         return implementation->get_allocator ();
-    }
-
-    key_compare key_comp () const
-    {
-        auto implementation = atomic_load (& implementation_);
-
-        return implementation->key_comp ();
-    }
-
-    value_compare value_comp () const
-    {
-        auto implementation = atomic_load (& implementation_);
-
-        return implementation->value_comp ();
     }
 
     size_type count (const key_type & key) const

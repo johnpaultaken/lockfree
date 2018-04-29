@@ -1,133 +1,205 @@
 #include <functional>
+#include <algorithm>
 #include <string>
+#include <cstring>
+#include <sstream>
+#include <list>
 
 #include "map.h"
 
 using std::cout;
 
-void assert_t(bool b, const std::string & what)
+void assert_m(
+    bool cond,
+    const std::string & what,
+    const std::string & func,
+    int line
+)
 {
-    cout << (b ? ("\nOK : " + what) : ("\nFAIL : " + what));
+    auto filepath = __FILE__;
+    auto filename = std::max(
+        filepath,
+        std::max(strrchr(filepath, '\\'), strrchr(filepath, '/')) + 1
+    );
+
+    std::ostringstream msg;
+    msg << (cond ? "\nOK : " : "\nFAIL : ")
+            << func 
+            << " at "<< filename << ":" << line << " "
+            << what;
+
+    cout << msg.str();
 }
 
-void fail(const std::string & what)
+#define ASSERT_M(cond, what) assert_m(cond, what, __func__, __LINE__ );
+#define FAIL_M(what) assert_m(false, what, __func__, __LINE__ );
+#define PASS_M(what) assert_m(true, what, __func__, __LINE__ );
+
+#define ASSERT(cond) assert_m(cond, "", __func__, __LINE__ );
+#define FAIL() assert_m(false, "", __func__, __LINE__ );
+#define PASS() assert_m(true, "", __func__, __LINE__ );
+
+
+
+template<class Map>
+void test_construct_assign(Map &)
 {
-    assert_t(false, what);
+    // default constructor
+    Map m1;
+    ASSERT_M(m1.size() == 0, "default constructor");
+
+    // move constructor from imp 
+    typename Map::implementation_type imp2{ { 1,2 },{ 3,4 },{ 5,6 },{ 7,8 } };
+    Map m2{ std::move(imp2) };
+    ASSERT_M(imp2.size() == 0, "move constructor from imp");
+    ASSERT_M(m2.size() == 4, "move constructor from imp");
+
+    // copy constructor
+    Map m3{ m2 };
+    ASSERT_M(m2.size() == 4, "copy constructor");
+    ASSERT_M(m3.size() == 4, "copy constructor");
+
+    // move constructor
+    Map m4{ std::move(m3) };
+    ASSERT_M(m3.size() == 0, "move constructor");
+    ASSERT_M(m4.size() == 4, "move constructor");
+
+    // copy assignment
+    typename Map::implementation_type imp5{ { 0,1 },{ 2,3 } };
+    Map m5{ std::move(imp5) };
+    m5 = m4;
+    ASSERT_M(m4.size() == 4, "copy assignment");
+    ASSERT_M(m5.size() == 4, "copy assignment");
+
+    // move assignment
+    typename Map::implementation_type imp6{ { 0,1 },{ 2,3 } };
+    Map m6{ std::move(imp6) };
+    m6 = std::move(m5);
+    ASSERT_M(m5.size() == 0, "move assignment");
+    ASSERT_M(m6.size() == 4, "move assignment");
+
+    // move assignment from imp
+    typename Map::implementation_type imp6b{ { 0,1 },{ 2,3 } };
+    m6 = std::move(imp6b);
+    ASSERT_M(m6.size() == 2, "move assignment from imp");
 }
 
-void pass(const std::string & what)
+template<class Map>
+void test_read(Map &)
 {
-    assert_t(true, what);
-}
+    Map m1{
+        typename Map::implementation_type{ { 1,2 },{ 3,4 },{ 5,6 },{ 7,8 } }
+    };
 
-void testcase_map()
-{
-    lockfree::map<int, int> m;
-    m[0] = 1;
-    m[2] = 3;
-    m[4] = 5;
-    assert_t(m[2] == 3, __FUNCTION__);
-
-    try {
-        auto v = m.at(100);
-        fail(__FUNCTION__);
+    // at() api
+    ASSERT_M(m1.at(5) == 6, "at");
+    try
+    {
+        m1.at(9);
+        FAIL_M("at");
     }
     catch (const std::out_of_range &)
     {
-        pass(__FUNCTION__);
+        PASS_M("at");
     }
 
-    if (0 == m[101])
+    // indexing
+    ASSERT_M(m1[5] == 6, "indexing");
+    ASSERT_M(m1[9] == 0, "indexing");
+
+    // iteration
+    std::list<int> expected{ 1,3,5,7,9 };
+    std::list<int> actual;
+    for (auto item : m1)
     {
-        pass(__FUNCTION__);
+        actual.push_back(item.first);
     }
-    else
-    {
-        fail(__FUNCTION__);
-    }
+    actual.sort();  // needed for unordered_map
+    ASSERT_M(actual == expected, "iteration");
 
-    lockfree::map<int, int, std::greater<int>> m2;
-    m2[0] = 1;
-    m2[2] = 3;
-    m2[4] = 5;
-    assert_t(m2.at(2) == 3, __FUNCTION__);
-    assert_t(m2[2] == 3, __FUNCTION__);
+    // find
+    ASSERT_M(m1.find(5)->second == 6, "find");
+    ASSERT_M(m1.find(11) == m1.end(), "find end");
 
-    m2.find(2);
-    m2.lower_bound(2);
-    m2.upper_bound(2);
-    m2.equal_range(2);
+    // equal_range
+    ASSERT_M(m1.equal_range(5).first->second == 6, "equal_range");
+    ASSERT_M(m1.equal_range(5).second->second == 8, "equal_range");
 
-    m2.value_comp();
-    m2.max_size();
-    assert_t(m2.count(2) == 1, __FUNCTION__);
+    //count
+    ASSERT_M(m1.count(5) == 1, "count");
+    ASSERT_M(m1.count(11) == 0, "count");
+
+    // max_size
+    ASSERT_M(m1.max_size() > 1, "max_size");
 }
 
-template <typename T>
-struct identity
+template<class Map>
+void test_write(Map &)
 {
-    T operator() (T p) const
-    {
-        return p;
-    }
-};
+    Map m1{
+        typename Map::implementation_type{ { 1,2 },{ 3,4 },{ 5,6 },{ 7,8 } }
+    };
 
-void testcase_unordMap()
+    // indexing
+    m1[5] = 99;
+    ASSERT_M(m1.at(5) == 99, "indexing");
+    m1[17] = 100;
+    ASSERT_M(m1.at(17) == 100, "indexing");
+
+    // insert
+    std::vector<std::pair<int, int>> v{ { 21,22 },{ 23,24 },{ 25,26 } };
+    m1.insert(v.begin(), v.end());
+    std::list<int> expected{ 1,3,5,7,17,21,23,25 };
+    std::list<int> actual;
+    for (auto item : m1)
+    {
+        actual.push_back(item.first);
+    }
+    actual.sort();  // needed for unordered_map
+    ASSERT_M(actual == expected, "insert");
+
+    m1.erase(17);
+    ASSERT_M(m1.find(17) == m1.end(), "erase");
+
+    ASSERT_M(!m1.empty(), "empty");
+    m1.clear();
+    ASSERT_M(m1.size() == 0, "clear");
+    ASSERT_M(m1.empty(), "empty");
+}
+
+template<class Map>
+void test_interface(Map & m)
 {
-    lockfree::unordered_map<int, int> m;
-    m[0] = 1;
-    m[2] = 3;
-    m[4] = 5;
-    assert_t(m.at(2) == 3, __FUNCTION__);
-
-    try {
-        auto v = m.at(100);
-        fail(__FUNCTION__);
-    }
-    catch (const std::out_of_range &)
-    {
-        pass(__FUNCTION__);
-    }
-
-    if (0 == m[101])
-    {
-        pass(__FUNCTION__);
-    }
-    else
-    {
-        fail(__FUNCTION__);
-    }
-
-    lockfree::unordered_map<int, int, identity<int>, std::equal_to<int>> m2;
-    m2[0] = 1;
-    m2[2] = 3;
-    m2[4] = 5;
-    assert_t(m2[2] == 3, __FUNCTION__);
+    test_construct_assign(m);
+    test_read(m);
+    test_write(m);
 }
 
 template <typename K, typename M>
 class my_map: public std::map<K,M>
 {
 public:
-    const std::string msg_move_constructor{"copy constructor invoked must be move constructor."};
+    const std::string msg_move_constructor{
+        "copy constructor invoked must be move constructor."
+    };
 
     my_map() = default;
 
     my_map(const my_map &)
     {
-        fail(msg_move_constructor);
+        FAIL_M(msg_move_constructor);
     }
 
     my_map(my_map &&)
     {
-        pass(msg_move_constructor);
+        PASS_M(msg_move_constructor);
     }
 };
 
 template <typename K, typename M>
 using my_lockfree_map = lockfree::map_template <my_map <K, M>>;
 
-void testcase_myMap()
+void test_myMap()
 {
     my_map<int,int> m;
     m.insert(std::make_pair(0, 1));
@@ -140,11 +212,13 @@ void testcase_myMap()
 
 int main(int argc, char ** argv)
 {
-    testcase_map();
+    lockfree::map<int, int> m1;
+    test_interface(m1);
 
-    testcase_unordMap();
+    lockfree::unordered_map<int, int> m2;
+    test_interface(m2);
 
-    testcase_myMap();
+    test_myMap();
 
     cout << "\ndone\n";
     getchar();
