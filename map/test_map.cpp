@@ -4,6 +4,7 @@
 #include <cstring>
 #include <sstream>
 #include <list>
+#include <vector>
 #include <future>
 
 #include "map.h"
@@ -18,7 +19,7 @@ void assert_m(
 )
 {
     auto filepath = __FILE__;
-    auto filename = std::max(
+    auto filename = std::max<const char *>(
         filepath,
         std::max(strrchr(filepath, '\\'), strrchr(filepath, '/')) + 1
     );
@@ -223,19 +224,19 @@ void test_concurrent_writes(Map &)
     std::atomic<unsigned int> count{ 0 };
     auto t1 = std::async(
         std::launch::async,
-        [&m1,&count,&wait]() { count++;  while (wait); m1[2] = 3; }
+        [&m1,&count,&wait]() { count++;  while (wait){}; m1[2] = 3; }
     );
     auto t2 = std::async(
         std::launch::async,
-        [&m1, &count, &wait]() { count++;  while (wait); m1[4] = 5; }
+        [&m1, &count, &wait]() { count++;  while (wait){}; m1[4] = 5; }
     );
     auto t3 = std::async(
         std::launch::async,
-        [&m1, &count, &wait]() { count++;  while (wait); m1[6] = 7; }
+        [&m1, &count, &wait]() { count++;  while (wait){}; m1[6] = 7; }
     );
     auto t4 = std::async(
         std::launch::async,
-        [&m1, &count, &wait]() { count++;  while (wait); m1[8] = 9; }
+        [&m1, &count, &wait]() { count++;  while (wait){}; m1[8] = 9; }
     );
     while (count < 2);
     wait = false;
