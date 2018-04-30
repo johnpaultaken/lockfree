@@ -28,8 +28,6 @@ Notes:
     allocators like a not too old version of libc malloc
     (or tcmalloc / jemalloc etc). If you have multi-threaded code, you are most
     likely already using one.
-4.  Do not use -pthread compiler option in gcc because
-    using that option seems to trigger lock based implementation.
 */
 
 namespace lockfree

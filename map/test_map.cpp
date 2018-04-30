@@ -4,6 +4,7 @@
 #include <cstring>
 #include <sstream>
 #include <list>
+#include <future>
 
 #include "map.h"
 
@@ -210,13 +211,65 @@ void test_myMap()
     my_lockfree_map<int, int> ml(std::move(m));
 }
 
+
+template<class Map>
+void test_concurrent_writes(Map &)
+{
+    Map m1{
+        typename Map::implementation_type{ { 1,2 },{ 3,4 },{ 5,6 },{ 7,8 } }
+    };
+
+    std::atomic<bool> wait{ true };
+    std::atomic<unsigned int> count{ 0 };
+    auto t1 = std::async(
+        std::launch::async,
+        [&m1,&count,&wait]() { count++;  while (wait); m1[2] = 3; }
+    );
+    auto t2 = std::async(
+        std::launch::async,
+        [&m1, &count, &wait]() { count++;  while (wait); m1[4] = 5; }
+    );
+    auto t3 = std::async(
+        std::launch::async,
+        [&m1, &count, &wait]() { count++;  while (wait); m1[6] = 7; }
+    );
+    auto t4 = std::async(
+        std::launch::async,
+        [&m1, &count, &wait]() { count++;  while (wait); m1[8] = 9; }
+    );
+    while (count < 2);
+    wait = false;
+    t1.wait();
+    t2.wait();
+    t3.wait();
+    t4.wait();
+
+    // verify
+    std::list<int> expected{ 1,2,3,4,5,6,7,8 };
+    std::list<int> actual;
+    for (auto item : m1)
+    {
+        actual.push_back(item.first);
+    }
+    actual.sort();  // needed for unordered_map
+    ASSERT_M(actual == expected, "concurrent writes");
+}
+
+template<class Map>
+void test_concurrency(Map & m)
+{
+    test_concurrent_writes(m);
+}
+
 int main(int argc, char ** argv)
 {
     lockfree::map<int, int> m1;
     test_interface(m1);
+    test_concurrency(m1);
 
     lockfree::unordered_map<int, int> m2;
     test_interface(m2);
+    test_concurrency(m2);
 
     test_myMap();
 
