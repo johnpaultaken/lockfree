@@ -6,6 +6,7 @@
 #include <list>
 #include <vector>
 #include <future>
+#include <random>
 
 #include "map.h"
 
@@ -238,7 +239,7 @@ void test_concurrent_writes(Map &)
         std::launch::async,
         [&m1, &count, &wait]() { count++;  while (wait){}; m1[8] = 9; }
     );
-    while (count < 2);
+    while (count < 4);
     wait = false;
     t1.wait();
     t2.wait();
@@ -256,25 +257,143 @@ void test_concurrent_writes(Map &)
     ASSERT_M(actual == expected, "concurrent writes");
 }
 
+//
+// Test concurrency with 4 threads,
+// each thread reading, writing and modifying
+// the same map concurrently.
+//
+template<class Map>
+void test_concurrent4x_read_write_modify(Map &)
+{
+    const int range_begin{ 0x0000000F };
+    const int range_end{ 0x000004F0 };
+
+    std::atomic<bool> wait{ true };
+    std::atomic<unsigned int> concurrency{ 0 };
+
+    Map m1{
+        typename Map::implementation_type{
+            { range_begin - 2, range_begin - 2 },
+            { range_begin - 1, range_begin - 1 },
+            { range_end, range_end },
+            { range_end + 1, range_end + 1 }
+        }
+    };
+
+    cout << "\nPlease wait a min ...";
+
+    auto threadfunc = (
+        [&m1, &concurrency, &wait, range_begin, range_end]() {
+            concurrency++;
+            while (wait) {};
+            std::mt19937 mt(std::random_device{}());
+            std::uniform_int_distribution<int> ud(range_begin, range_end-1);
+            auto r = std::bind(ud, mt);
+            auto count = 2 * (range_end - range_begin);
+            for (int i = 0; i < count; ++i)
+            {
+                auto key = r();
+                auto dowhat = r() % 4;
+                switch (dowhat)
+                {
+                case 0:
+                    m1[key] = key;
+                    break;
+                case 1:
+                    {
+                        std::vector<std::pair<int, int>> v{ { key, key } };
+                        m1.insert(v.begin(), v.end());
+                        break;
+                    }
+                case 2:
+                    m1.erase(key);
+                    break;
+                case 3:
+                    try
+                    {
+                        m1.at(key);
+                    }
+                    catch (const std::out_of_range &)
+                    {
+                    }
+                    break;
+                default:
+                    break;
+                }
+                //cout << "\n" << std::this_thread::get_id() << ":" << i;
+            }
+        }
+    );
+
+    auto t1 = std::thread(threadfunc);
+    auto t2 = std::thread(threadfunc);
+    auto t3 = std::thread(threadfunc);
+    auto t4 = std::thread(threadfunc);
+
+    // wait until all threads are on mark.
+    while (concurrency < 4);
+
+    // all threads go
+    wait = false;
+
+    t1.join();
+    t2.join();
+    t3.join();
+    t4.join();
+
+    // verify integrity of map
+    for (auto item : m1)
+    {
+        if (item.first != item.second)
+        FAIL_M("map data integrity");
+    }
+    ASSERT_M(m1[range_begin-2] == range_begin-2, "map data integrity");
+    ASSERT_M(m1[range_begin-1] == range_begin-1, "map data integrity");
+    ASSERT_M(m1[range_end] == range_end, "map data integrity");
+    ASSERT_M(m1[range_end+1] == range_end+1, "map data integrity");
+}
+
 template<class Map>
 void test_concurrency(Map & m)
 {
     test_concurrent_writes(m);
+    test_concurrent4x_read_write_modify(m);
 }
 
-int main(int argc, char ** argv)
+//
+// This std::map wrapper can be used to check the strength of concurrency tests
+// Since std::map is not thread-safe, concurrency tests would not succeed on
+// this map.
+//
+class MapNonMt :public std::map<int, int>
 {
-    lockfree::map<int, int> m1;
-    test_interface(m1);
-    test_concurrency(m1);
+public:
+    using implementation_type = std::map<int, int>;
+    MapNonMt(const implementation_type & imp) : std::map<int, int>{ imp } {}
+    MapNonMt() = default;
+};
 
-    lockfree::unordered_map<int, int> m2;
-    test_interface(m2);
-    test_concurrency(m2);
+
+int main(int , char ** )
+{
+    lockfree::map<int, int> map_ord;
+    test_interface(map_ord);
+    test_concurrency(map_ord);
+
+    lockfree::unordered_map<int, int> map_unord;
+    test_interface(map_unord);
+    test_concurrency(map_unord);
 
     test_myMap();
 
+    // Enable this code to verify the strength of concurrency tests.
+    // MapNonMt is a std::map wrapper.
+    // Since std::map is not thread-safe, concurrency tests would not succeed
+    // on this map.
+    //MapNonMt map_nmt;
+    //test_concurrency(map_nmt);
+
     cout << "\ndone\n";
-    getchar();
+    //getchar();
     return 0;
 }

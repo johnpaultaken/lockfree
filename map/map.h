@@ -54,8 +54,10 @@ public:
     {
         if (! atomic_is_lock_free (& implementation_))
         {
+#ifdef WALL
             std::cerr << "\nlockfree::map not supported by this platform."
                       << " Falling back to lock based implementation.";
+#endif
         }
 
         auto implementation = std::make_shared <implementation_type> ();
@@ -102,8 +104,10 @@ public:
     {
         if (! atomic_is_lock_free (& implementation_))
         {
+#ifdef WALL
             std::cerr << "\nlockfree::map not supported by this platform."
                       << " Falling back to lock based implementation.";
+#endif
         }
 
         // This call will invoke the move constructor of implementation_type.
