@@ -16,14 +16,6 @@ using std::cout;
 class c
 {
 public:
-    c() :m_i(0)
-    {
-    }
-
-    c(int i) :m_i(i)
-    {
-    }
-
     c & operator=(int i)
     {
         m_i = i;
@@ -34,6 +26,19 @@ public:
     {
         return m_i;
     }
+private:
+    c() :m_i(0)
+    {
+    }
+
+    c(int i) :m_i(i)
+    {
+    }
+
+    friend class singleton<c>;
+    // the following is needed only for Visual Studio
+    //friend std::shared_ptr<c> singleton<c>::instance();
+    //friend std::shared_ptr<c> singleton<c>::instance(int);
 private:
     int m_i;
 };
@@ -58,8 +63,6 @@ void test_manythreads()
     constexpr int expected = 21;
     auto instance = singleton<c>::instance(expected);
 
-    constexpr unsigned int num_tasks = 4;
-
     auto fetchInstanceVal = [expected]() {
         auto instance = singleton<c>::instance();
         if(*instance != expected)
@@ -69,9 +72,10 @@ void test_manythreads()
     };
 
     {
+        constexpr unsigned int num_tasks = 4;
         bool ok = true;
         vector<future<void>> vt;
-        for (size_t i = 0; i < 4; ++i)
+        for (size_t i = 0; i < num_tasks; ++i)
         {
             vt.push_back(async(fetchInstanceVal));
         }

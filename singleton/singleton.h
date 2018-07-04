@@ -26,7 +26,7 @@ using std::unique_lock;
 Notes:
 1.  Lock-free once the single instance is constructed.
     Uses a lock while constructing the single instance.
-2.  Avoids double checked locking, which is incorrect, to achieve lock-free.
+2.  Avoids incorrect double checked locking to achieve lock-free.
 3.  Releases the singleton object once the last client holding a reference
     releases it.
 4.  Please see test_singleton.cpp for usage example.
@@ -55,7 +55,9 @@ public:
             auto instance = instance_.lock();
             if (!instance)
             {
-                instance = make_shared<T>(params...);
+                // cannot use make_shared when T's constructors are private.
+                //instance = make_shared<T>(params...);
+                instance = shared_ptr<T>{new T{params...}};
                 instance_ = instance;
             }
             return instance;
