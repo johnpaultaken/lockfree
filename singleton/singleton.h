@@ -43,7 +43,7 @@ public:
     singleton<T> & operator= (singleton<T> &&) = delete;
 
     template<typename... P>
-    static shared_ptr<T> instance(P... params)
+    static shared_ptr<T> instance(P&&... params)
     {
         try
         {
@@ -57,7 +57,7 @@ public:
             {
                 // cannot use make_shared when T's constructors are private.
                 //instance = make_shared<T>(params...);
-                instance = shared_ptr<T>{new T{params...}};
+                instance = shared_ptr<T>{new T{std::forward<P>(params)...}};
                 instance_ = instance;
             }
             return instance;

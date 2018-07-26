@@ -35,17 +35,20 @@ private:
     {
     }
 
-    friend class singleton<c>;
+#ifdef _MSC_VER
     // the following is needed only for Visual Studio
-    //friend std::shared_ptr<c> singleton<c>::instance();
-    //friend std::shared_ptr<c> singleton<c>::instance(int);
+    friend std::shared_ptr<c> singleton<c>::instance();
+    friend std::shared_ptr<c> singleton<c>::instance<int &>(int &);
+#else
+    friend class singleton<c>;
+#endif
 private:
     int m_i;
 };
 
 void test_basic()
 {
-    constexpr int expected = 17;
+    int expected = 17;
     auto instance = singleton<c>::instance(expected);
     auto sameinstance = singleton<c>::instance();
     if (*sameinstance == expected)
@@ -60,7 +63,7 @@ void test_basic()
 
 void test_manythreads()
 {
-    constexpr int expected = 21;
+    int expected = 21;
     auto instance = singleton<c>::instance(expected);
 
     auto fetchInstanceVal = [expected]() {
