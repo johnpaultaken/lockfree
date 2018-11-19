@@ -49,6 +49,7 @@ public:
     using value_type = typename implementation_type::value_type;
     using size_type = typename implementation_type::size_type;
     using allocator_type = typename implementation_type::allocator_type;
+    using key_compare = typename implementation_type::key_compare;
 
     map_template ()
     {
