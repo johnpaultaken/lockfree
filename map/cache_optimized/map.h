@@ -58,7 +58,6 @@ public:
     using value_type = typename implementation_type::value_type;
     using size_type = typename implementation_type::size_type;
     using allocator_type = typename implementation_type::allocator_type;
-    using key_compare = typename implementation_type::key_compare;
 
     map_template ()
     {
@@ -71,7 +70,7 @@ public:
         }
 
         auto implementation = std::make_shared <implementation_type> (
-            allocator_type {safe_size (0)}
+            allocator_type {num_allocs (0)}
         );
 
         atomic_store (& implementation_, implementation);
@@ -87,7 +86,7 @@ public:
         // copy construct implementation
         auto implementation = std::make_shared <implementation_type> (
             * other_implementation,
-            allocator_type {safe_size (other_implementation->size ())}
+            allocator_type {num_allocs (other_implementation->size ())}
         );
 
         atomic_store (& implementation_, implementation);
@@ -99,7 +98,7 @@ public:
     map_template (this_type && other)
     {
         auto implementation = std::make_shared <implementation_type> (
-            allocator_type {safe_size (0)}
+            allocator_type {num_allocs (0)}
         );
 
         auto other_implementation = (
@@ -145,7 +144,7 @@ public:
             // clone other_implementation by copy construction.
             auto implementation = std::make_shared <implementation_type> (
                 * other_implementation,
-                allocator_type {safe_size (other_implementation->size ())}
+                allocator_type {num_allocs (other_implementation->size ())}
             );
 
             atomic_store (& implementation_, implementation);
@@ -162,7 +161,7 @@ public:
         if (this != & other)
         {
             auto implementation = std::make_shared <implementation_type> (
-                allocator_type {safe_size (0)}
+                allocator_type {num_allocs (0)}
             );
 
             auto other_implementation = (
@@ -274,7 +273,7 @@ public:
             desired = std::make_shared <implementation_type> (
                 * expected,
                 allocator_type {
-                    safe_size (expected->size () + std::distance(first, last))
+                    num_allocs (expected->size () + std::distance(first, last))
                 }
             );
 
@@ -302,7 +301,7 @@ public:
                 desired = std::make_shared <implementation_type> (
                     * expected,
                     allocator_type {
-                        safe_size (expected->size ())
+                        num_allocs (expected->size ())
                     }
                 );
 
@@ -324,7 +323,7 @@ public:
     void clear ()
     {
         auto implementation = std::make_shared <implementation_type> (
-            allocator_type {safe_size (0)}
+            allocator_type {num_allocs (0)}
         );
 
         atomic_store (& implementation_, implementation);
@@ -429,12 +428,14 @@ public:
     }
 
     //
-    // Get the number of allocations expected from implementation_type.
-    // Param: sz size of std::map
-    // Return: Number of allocations expected from implementation_type.
-    //         Note: Visual Studio does size+1 allocations for std::map.
+    // Given the required size of map, how many allocate() calls would be made
+    // by the implementation_type.
+    // Param: sz size of map required
+    // Return: Number of allocations expected from the implementation_type.
+    //     Note: Might need to round the number to power of 2. TODO.
+    //     Note: Visual Studio does +1 allocations compared to gcc for std::map.
     //
-    static size_t safe_size(size_t sz)
+    static size_t num_allocs(size_t sz)
     {
        return (
                    sz
@@ -514,7 +515,7 @@ protected:
                 desired = std::make_shared <implementation_type> (
                     * expected,
                     allocator_type {
-                        safe_size (expected->size () + 1)
+                        num_allocs (expected->size () + 1)
                     }
                 );
 
@@ -550,7 +551,7 @@ protected:
                 desired = std::make_shared <implementation_type> (
                     * expected,
                     allocator_type {
-                        safe_size (expected->size () + 1)    // + 1 if new key
+                        num_allocs (expected->size () + 1)    // + 1 if new key
                     }
                 );
 

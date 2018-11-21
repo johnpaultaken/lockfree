@@ -44,6 +44,48 @@ void assert_m(
 
 
 
+template <typename Map, typename = void>
+struct is_unordered: std::false_type {};
+
+template <typename Map>
+struct is_unordered<Map, decltype(Map::key_equal(),void())>: std::true_type {};
+
+template <typename Map>
+typename
+std::enable_if<
+    is_unordered<typename Map::implementation_type>::value,
+    typename Map::implementation_type
+>::type
+construct_imp (std::initializer_list<typename Map::value_type> init)
+{
+    return typename Map::implementation_type{
+        init,
+        size_t(32),
+        Map::implementation_type::hasher {},
+        Map::implementation_type::key_equal {},
+        Map::allocator_type {
+            Map::num_allocs(init.size())
+        }
+    };
+}
+
+template <typename Map>
+typename
+std::enable_if<
+    !is_unordered<typename Map::implementation_type>::value,
+    typename Map::implementation_type
+>::type
+construct_imp (std::initializer_list<typename Map::value_type> init)
+{
+    return typename Map::implementation_type{
+        init,
+        Map::implementation_type::key_compare {},
+        Map::allocator_type {
+            Map::num_allocs(init.size())
+        }
+    };
+}
+
 template<class Map>
 void test_construct_assign(Map &)
 {
@@ -51,15 +93,9 @@ void test_construct_assign(Map &)
     Map m1;
     ASSERT_M(m1.size() == 0, "default constructor");
 
-    // move constructor from imp 
-    typename Map::implementation_type imp2{
-        {{ 1,2 },{ 3,4 },{ 5,6 },{ 7,8 }},
-        Map::key_compare {},
-        Map::allocator_type {
-            Map::safe_size(4)  //size of initializer list
-        }
-    };
-    Map m2{ std::move(imp2) };
+    // move constructor from imp
+    auto imp2 = construct_imp<Map> ({{ 1,2 },{ 3,4 },{ 5,6 },{ 7,8 }});
+    Map m2 { std::move(imp2) };
     ASSERT_M(imp2.size() == 0, "move constructor from imp");
     ASSERT_M(m2.size() == 4, "move constructor from imp");
 
@@ -74,55 +110,26 @@ void test_construct_assign(Map &)
     ASSERT_M(m4.size() == 4, "move constructor");
 
     // copy assignment
-    typename Map::implementation_type imp5{
-        {{ 0,1 },{ 2,3 }},
-        Map::key_compare {},
-        Map::allocator_type {
-            Map::safe_size(2)  //size of initializer list
-        }
-    };
-    Map m5{ std::move(imp5) };
+    Map m5{ std::move(construct_imp<Map> ({{ 0,1 },{ 2,3 }})) };
     m5 = m4;
     ASSERT_M(m4.size() == 4, "copy assignment");
     ASSERT_M(m5.size() == 4, "copy assignment");
 
     // move assignment
-    typename Map::implementation_type imp6{
-        {{ 0,1 },{ 2,3 }},
-        Map::key_compare {},
-        Map::allocator_type {
-            Map::safe_size(2)  //size of initializer list
-        }
-    };
-    Map m6{ std::move(imp6) };
+    Map m6{ std::move(construct_imp<Map> ({{ 0,1 },{ 2,3 }})) };
     m6 = std::move(m5);
     ASSERT_M(m5.size() == 0, "move assignment");
     ASSERT_M(m6.size() == 4, "move assignment");
 
     // move assignment from imp
-    typename Map::implementation_type imp6b{
-        {{ 0,1 },{ 2,3 }},
-        Map::key_compare {},
-        Map::allocator_type {
-            Map::safe_size(2)  //size of initializer list
-        }
-    };
-    m6 = std::move(imp6b);
+    m6 = std::move(construct_imp<Map> ({{ 0,1 },{ 2,3 }}));
     ASSERT_M(m6.size() == 2, "move assignment from imp");
 }
 
 template<class Map>
 void test_read(Map &)
 {
-    Map m1{
-        typename Map::implementation_type{
-            {{ 1,2 },{ 3,4 },{ 5,6 },{ 7,8 }},
-            Map::key_compare {},
-            Map::allocator_type {
-                Map::safe_size(4)  //size of initializer list
-            }
-        }
-    };
+    Map m1 {construct_imp<Map> ({{ 1,2 },{ 3,4 },{ 5,6 },{ 7,8 }})};
 
     // at() api
     ASSERT_M(m1.at(5) == 6, "at");
@@ -169,15 +176,7 @@ void test_read(Map &)
 template<class Map>
 void test_write(Map &)
 {
-    Map m1{
-        typename Map::implementation_type{
-            {{ 1,2 },{ 3,4 },{ 5,6 },{ 7,8 }},
-            Map::key_compare {},
-            Map::allocator_type {
-                Map::safe_size(4)  //size of initializer list
-            }
-        }
-    };
+    Map m1{construct_imp<Map> ({{ 1,2 },{ 3,4 },{ 5,6 },{ 7,8 }})};
 
     // indexing
     m1[5] = 99;
@@ -253,15 +252,7 @@ void test_myMap()
 template<class Map>
 void test_concurrent_writes(Map &)
 {
-    Map m1{
-        typename Map::implementation_type{
-            {{ 1,2 },{ 3,4 },{ 5,6 },{ 7,8 }},
-            Map::key_compare {},
-            Map::allocator_type {
-                Map::safe_size(4)  //size of initializer list
-            }
-        }
-    };
+    Map m1{construct_imp<Map> ({{ 1,2 },{ 3,4 },{ 5,6 },{ 7,8 }})};
 
     std::atomic<bool> wait{ true };
     std::atomic<unsigned int> count{ 0 };
@@ -313,19 +304,14 @@ void test_concurrent4x_read_write_modify(Map &)
     std::atomic<bool> wait{ true };
     std::atomic<unsigned int> concurrency{ 0 };
 
-    Map m1{
-        typename Map::implementation_type{
+    Map m1{construct_imp<Map> (
             {
                 { range_begin - 2, range_begin - 2 },
                 { range_begin - 1, range_begin - 1 },
                 { range_end, range_end },
                 { range_end + 1, range_end + 1 }
-            },
-            Map::key_compare {},
-            Map::allocator_type {
-                Map::safe_size(4)  //size of initializer list
             }
-        }
+        )
     };
 
     cout << "\nPlease wait a min ...";
@@ -449,14 +435,12 @@ int main(int , char ** )
 
 int main(int , char ** )
 {
-    lockfree::cache_optimized::map<int, int> map_ord;
-    test_interface(map_ord);
-    test_concurrency(map_ord);
-
 
     lockfree::cache_optimized::unordered_map<int, int> map_unord;
     test_interface(map_unord);
     test_concurrency(map_unord);
+
+    //test_myMap();
 
     getchar();
     return 0;
