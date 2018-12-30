@@ -126,7 +126,6 @@ void test_read(Map &)
 
     // equal_range
     ASSERT_M(m1.equal_range(5).first->second == 6, "equal_range");
-    ASSERT_M(m1.equal_range(5).second->second == 8, "equal_range");
 
     //count
     ASSERT_M(m1.count(5) == 1, "count");
@@ -183,7 +182,7 @@ class my_map: public std::map<K,M>
 {
 public:
     const std::string msg_move_constructor{
-        "copy constructor invoked must be move constructor."
+        "constructor invoked must be move constructor."
     };
 
     my_map() = default;
@@ -265,8 +264,8 @@ void test_concurrent_writes(Map &)
 template<class Map>
 void test_concurrent4x_read_write_modify(Map &)
 {
-    const int range_begin{ 0x0000000F };
-    const int range_end{ 0x000004F0 };
+    int range_begin{ 0x0000000F };
+    int range_end{ 0x000004F0 };
 
     std::atomic<bool> wait{ true };
     std::atomic<unsigned int> concurrency{ 0 };

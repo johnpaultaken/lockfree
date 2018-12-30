@@ -48,7 +48,9 @@ template <typename Map, typename = void>
 struct is_unordered: std::false_type {};
 
 template <typename Map>
-struct is_unordered<Map, decltype(Map::key_equal(),void())>: std::true_type {};
+struct is_unordered<Map, decltype(typename Map::key_equal(),void())> :
+    std::true_type
+{};
 
 template <typename Map>
 typename
@@ -61,10 +63,10 @@ construct_imp (std::initializer_list<typename Map::value_type> init)
     return typename Map::implementation_type{
         init,
         size_t(32),
-        Map::implementation_type::hasher {},
-        Map::implementation_type::key_equal {},
-        Map::allocator_type {
-            Map::num_allocs(init.size())
+        typename Map::implementation_type::hasher {},
+        typename Map::implementation_type::key_equal {},
+        typename Map::allocator_type {
+            init.size()
         }
     };
 }
@@ -79,9 +81,9 @@ construct_imp (std::initializer_list<typename Map::value_type> init)
 {
     return typename Map::implementation_type{
         init,
-        Map::implementation_type::key_compare {},
-        Map::allocator_type {
-            Map::num_allocs(init.size())
+        typename Map::implementation_type::key_compare {},
+        typename Map::allocator_type {
+            init.size()
         }
     };
 }
@@ -163,7 +165,6 @@ void test_read(Map &)
 
     // equal_range
     ASSERT_M(m1.equal_range(5).first->second == 6, "equal_range");
-    ASSERT_M(m1.equal_range(5).second->second == 8, "equal_range");
 
     //count
     ASSERT_M(m1.count(5) == 1, "count");
@@ -218,7 +219,7 @@ class my_map: public std::map<K,M>
 {
 public:
     const std::string msg_move_constructor{
-        "copy constructor invoked must be move constructor."
+        "constructor invoked must be move constructor."
     };
 
     my_map() = default;
@@ -298,8 +299,8 @@ void test_concurrent_writes(Map &)
 template<class Map>
 void test_concurrent4x_read_write_modify(Map &)
 {
-    const int range_begin{ 0x0000000F };
-    const int range_end{ 0x000004F0 };
+    int range_begin{ 0x0000000F };
+    int range_end{ 0x000004F0 };
 
     std::atomic<bool> wait{ true };
     std::atomic<unsigned int> concurrency{ 0 };
@@ -407,7 +408,7 @@ public:
     MapNonMt() = default;
 };
 
-/*
+
 int main(int , char ** )
 {
     lockfree::cache_optimized::map<int, int> map_ord;
@@ -429,19 +430,5 @@ int main(int , char ** )
 
     cout << "\ndone\n";
     //getchar();
-    return 0;
-}
-*/
-
-int main(int , char ** )
-{
-
-    lockfree::cache_optimized::unordered_map<int, int> map_unord;
-    test_interface(map_unord);
-    test_concurrency(map_unord);
-
-    //test_myMap();
-
-    getchar();
     return 0;
 }

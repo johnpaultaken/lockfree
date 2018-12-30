@@ -16,7 +16,7 @@
 #include <atomic>
 #include <iostream>
 // You will need to clone the utils repository also.
-#include "../../../utils/allocator/contiguous_allocator.h"
+#include "../../../utils/allocator/contiguous_stdcontainer_allocator.h"
 
 /*
 Notes:
@@ -29,12 +29,8 @@ Notes:
     However members that return const_iterator are provided.
 3.  This map uses the contiguous_allocator from the utils repo to ensure all
     its elements are contiguously stored in memory. Thus the frequent read
-    operations are cache optimised. The runtimes allocator is used only to
-    initialize the contiguous_allocator.
-4.  To avoid locks in the runtimes memory allocator you could use one of the
-    per-thread allocators like a not too old version of libc malloc
-    (or tcmalloc / jemalloc etc). If you have multi-threaded code, you are most
-    likely already using one.
+    operations are cache optimised. The runtime's allocator is used only to
+    initialize the contiguous_allocator in most cases.
 */
 
 namespace lockfree
@@ -70,7 +66,7 @@ public:
         }
 
         auto implementation = std::make_shared <implementation_type> (
-            allocator_type {num_allocs (0)}
+            allocator_type {0}
         );
 
         atomic_store (& implementation_, implementation);
@@ -85,8 +81,7 @@ public:
 
         // copy construct implementation
         auto implementation = std::make_shared <implementation_type> (
-            * other_implementation,
-            allocator_type {num_allocs (other_implementation->size ())}
+            * other_implementation
         );
 
         atomic_store (& implementation_, implementation);
@@ -98,7 +93,7 @@ public:
     map_template (this_type && other)
     {
         auto implementation = std::make_shared <implementation_type> (
-            allocator_type {num_allocs (0)}
+            allocator_type {0}
         );
 
         auto other_implementation = (
@@ -126,7 +121,7 @@ public:
 
         // This call will invoke the move constructor of implementation_type.
         auto implementation = std::make_shared <implementation_type> (
-            std::forward <implementation_type> (imp)
+            std::move (imp)
         );
 
         atomic_store (& implementation_, implementation);
@@ -143,8 +138,7 @@ public:
 
             // clone other_implementation by copy construction.
             auto implementation = std::make_shared <implementation_type> (
-                * other_implementation,
-                allocator_type {num_allocs (other_implementation->size ())}
+                * other_implementation
             );
 
             atomic_store (& implementation_, implementation);
@@ -161,7 +155,7 @@ public:
         if (this != & other)
         {
             auto implementation = std::make_shared <implementation_type> (
-                allocator_type {num_allocs (0)}
+                allocator_type {0}
             );
 
             auto other_implementation = (
@@ -184,7 +178,7 @@ public:
     {
         // This call will invoke the move constructor of implementation_type.
         auto implementation = std::make_shared <implementation_type> (
-            std::forward <implementation_type> (imp)
+            std::move (imp)
         );
 
         atomic_store (& implementation_, implementation);
@@ -273,7 +267,7 @@ public:
             desired = std::make_shared <implementation_type> (
                 * expected,
                 allocator_type {
-                    num_allocs (expected->size () + std::distance(first, last))
+                    expected->size () + std::distance(first, last)
                 }
             );
 
@@ -299,10 +293,7 @@ public:
             {
                 // clone implementation_type by copy construction.
                 desired = std::make_shared <implementation_type> (
-                    * expected,
-                    allocator_type {
-                        num_allocs (expected->size ())
-                    }
+                    * expected
                 );
 
                 count = desired->erase (key);
@@ -323,7 +314,7 @@ public:
     void clear ()
     {
         auto implementation = std::make_shared <implementation_type> (
-            allocator_type {num_allocs (0)}
+            allocator_type {0}
         );
 
         atomic_store (& implementation_, implementation);
@@ -427,24 +418,6 @@ public:
         return implementation->max_size ();
     }
 
-    //
-    // Given the required size of map, how many allocate() calls would be made
-    // by the implementation_type.
-    // Param: sz size of map required
-    // Return: Number of allocations expected from the implementation_type.
-    //     Note: Might need to round the number to power of 2. TODO.
-    //     Note: Visual Studio does +1 allocations compared to gcc for std::map.
-    //
-    static size_t num_allocs(size_t sz)
-    {
-       return (
-                   sz
-    #ifdef _MSC_VER
-                   + 1
-    #endif
-       );
-    }
-
 protected:
     //
     // Unexposed member functions.
@@ -515,7 +488,7 @@ protected:
                 desired = std::make_shared <implementation_type> (
                     * expected,
                     allocator_type {
-                        num_allocs (expected->size () + 1)
+                        expected->size () + 1
                     }
                 );
 
@@ -551,7 +524,7 @@ protected:
                 desired = std::make_shared <implementation_type> (
                     * expected,
                     allocator_type {
-                        num_allocs (expected->size () + 1)    // + 1 if new key
+                        expected->size () + 1    // + 1 if new key
                     }
                 );
 
@@ -583,7 +556,8 @@ using map = map_template <
         Key,
         Mapped,
         Predicate,
-        utils::contiguous_allocator <
+        utils::contiguous_stdcontainer_allocator <
+            std::map,
             typename std::map <Key, Mapped>::value_type
         >
     >
@@ -603,8 +577,9 @@ using unordered_map = map_template <
         Mapped,
         Hash,
         Predicate,
-        utils::contiguous_allocator <
-            typename std::map <Key, Mapped>::value_type
+        utils::contiguous_stdcontainer_allocator <
+            std::unordered_map,
+            typename std::unordered_map <Key, Mapped>::value_type
         >
     >
 >;
